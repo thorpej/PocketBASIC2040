@@ -8,6 +8,11 @@ pico_sdk_init()
 
 add_executable(pocketbasic2040
 	main.c
+	submodules/JTTB/tbvm/tbvm.c
+	)
+
+target_include_directories(pocketbasic2040 PUBLIC
+	${CMAKE_CURRENT_SOURCE_DIR}/submodules/JTTB/tbvm
 	)
 
 target_link_libraries(pocketbasic2040

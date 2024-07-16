@@ -1,0 +1,3 @@
+[submodule "submodules/JTTB"]
+	path = submodules/JTTB
+	url = git@github.com:thorpej/JTTB.git
