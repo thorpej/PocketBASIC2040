@@ -6,26 +6,5 @@ include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 project(pocketbasic2040)
 pico_sdk_init()
 
-add_executable(pocketbasic2040
-	main.c
-	submodules/JTTB/tbvm/tbvm.c
-	)
-
-target_include_directories(pocketbasic2040 PUBLIC
-	${CMAKE_CURRENT_SOURCE_DIR}/submodules/JTTB/tbvm
-	)
-
-target_link_libraries(pocketbasic2040
-	pico_stdlib
-	)
-
-# create map/bin/hex file etc.
-pico_add_extra_outputs(pocketbasic2040)
-
-add_compile_options(-Wall
-	-Wno-unused-function
-	)
-
-target_include_directories(pocketbasic2040 PUBLIC
-	${CMAKE_CURRENT_LIST_DIR}
-	)
+add_subdirectory(submodules/JTTB/tbvm)
+add_subdirectory(src)
