@@ -8,4 +8,5 @@ pico_sdk_init()
 
 add_subdirectory(submodules/JTTB/tbvm)
 add_subdirectory(submodules/pico9918/src/pio-utils)
+add_subdirectory(submodules/pico9918/src/vga)
 add_subdirectory(src)
