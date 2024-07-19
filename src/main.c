@@ -36,9 +36,6 @@
 
 /* Standard headers */
 #include <stdio.h>
-#include <math.h>
-//#include <fenv.h>
-//#pragma STDC FENV_ACCESS ON
 
 /* Local headers */
 #include "tbvm.h"
@@ -96,31 +93,6 @@ static const struct tbvm_file_io jttb_file_io = {
 	.io_check_break = jttb_check_break,
 };
 
-#if 0
-static int
-jttb_math_exc(void *vctx)
-{
-	int exc = 0;
-	int fpexc =
-	    fetestexcept(FE_UNDERFLOW|FE_OVERFLOW|FE_DIVBYZERO|FE_INVALID);
-
-	if (fpexc) {
-		if (fpexc & FE_DIVBYZERO) {
-			exc |= TBVM_EXC_DIV0;
-		} else if (fpexc & (FE_UNDERFLOW|FE_OVERFLOW|FE_INVALID)) {
-			exc |= TBVM_EXC_ARITH;
-		}
-		feclearexcept(FE_ALL_EXCEPT);
-	}
-
-	return exc;
-}
-
-static const struct tbvm_exc_io jttb_exc_io = {
-	.io_math_exc = jttb_math_exc,
-};
-#endif
-
 int
 main(void)
 {
@@ -132,7 +104,6 @@ main(void)
 
 		vm = tbvm_alloc(NULL);
 		tbvm_set_file_io(vm, &jttb_file_io);
-		// tbvm_set_exc_io(vm, &jttb_exc_io);
 		tbvm_exec(vm);
 		tbvm_free(vm);
 	}
