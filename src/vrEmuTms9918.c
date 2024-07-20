@@ -11,7 +11,7 @@
 
 
 
-#include "impl/vrEmuTms9918Priv.h"
+#include "vrEmuTms9918Priv.h"
 
 #if VR_EMU_TMS9918_SINGLE_INSTANCE
 

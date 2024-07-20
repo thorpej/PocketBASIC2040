@@ -38,7 +38,12 @@
 #include <stdio.h>
 
 /* Local headers */
+#include "pico9918-glue.h"
 #include "tbvm.h"
+
+/*****************************************************************************
+ * Tiny-ish BASIC interfaces.
+ *****************************************************************************/
 
 static tbvm	*vm;
 
@@ -93,11 +98,16 @@ static const struct tbvm_file_io jttb_file_io = {
 	.io_check_break = jttb_check_break,
 };
 
+/*****************************************************************************
+ * Main entry point.
+ *****************************************************************************/
+
 int
 main(void)
 {
 
 	stdio_uart_init();
+	pico9918_glue_init();
 
 	for (;;) {
 		printf("%s, version %s\n", tbvm_name(), tbvm_version());

@@ -7,7 +7,7 @@
 #define __time_critical_func(fn) fn
 #endif
 
-#include "../vrEmuTms9918.h"
+#include "vrEmuTms9918.h"
 
 
 #define VRAM_SIZE           (1 << 14) /* 16KB */
