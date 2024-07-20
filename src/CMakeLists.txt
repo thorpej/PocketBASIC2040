@@ -8,7 +8,6 @@ add_executable(pocketbasic2040
 	pico9918-glue.c
 	${PICO9918_SOURCE_DIR}/palette.c
 	vrEmuTms9918.c
-	# vrEmuTms9918Util.c
 	)
 
 # create map/bin/hex file etc.

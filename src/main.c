@@ -33,6 +33,7 @@
 #include "pico/stdlib.h"
 #include "pico/stdio_uart.h"
 #include "pico/printf.h"
+#include "pico/multicore.h"
 
 /* Standard headers */
 #include <stdio.h>
@@ -99,19 +100,50 @@ static const struct tbvm_file_io jttb_file_io = {
 };
 
 /*****************************************************************************
+ * VBLANK interrupt handler.
+ *****************************************************************************/
+
+static void
+__time_critical_func(core0_fifo_irq_handler)(void)
+{
+	uint32_t vdp_status;
+
+	/* Get the most recent value. */
+	while (multicore_fifo_rvalid()) {
+		vdp_status = multicore_fifo_pop_blocking();
+	}
+	multicore_fifo_clear_irq();
+
+	/*
+	 * We know STATUS_INT is set.  Eventually we could check
+	 * the sprite-related bits, too.
+	 */
+
+	/* XXX Update VRAM from shadow tile buffer. */
+}
+
+/*****************************************************************************
  * Main entry point.
  *****************************************************************************/
+
+static const char version_string[] = "0.1";
 
 int
 main(void)
 {
-
 	stdio_uart_init();
-	pico9918_glue_init();
+
+	printf("PocketBASIC2040, version %s\n", version_string);
+	printf("%s, version %s\n", tbvm_name(), tbvm_version());
+
+	/* Register an interrupt handler for the FIFO and enable it. */
+	irq_set_exclusive_handler(SIO_IRQ_PROC0, core0_fifo_irq_handler);
+	irq_set_enabled(SIO_IRQ_PROC0, true);
+
+	/* Initialize the virtual 9918 VDP. */
+	pico9918_init();
 
 	for (;;) {
-		printf("%s, version %s\n", tbvm_name(), tbvm_version());
-
 		vm = tbvm_alloc(NULL);
 		tbvm_set_file_io(vm, &jttb_file_io);
 		tbvm_exec(vm);
