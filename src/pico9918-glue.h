@@ -32,5 +32,6 @@ uint8_t	pico9918_read_status(void);
 void	pico9918_write_reg(uint8_t);
 void	pico9918_write_data(uint8_t);
 void	pico9918_copyin(uint32_t, const void *, size_t);
+void	pico9918_memset(uint32_t, uint8_t, size_t);
 
 #endif /* pico9918_glue_h_included */

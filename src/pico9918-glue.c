@@ -306,9 +306,19 @@ pico9918_write_data(uint8_t val)
 void
 pico9918_copyin(uint32_t vram_addr, const void *buf, size_t len)
 {
-  vram_addr &= VRAM_SIZE - 1;
+  vram_addr &= VRAM_MASK;
   if (len > VRAM_SIZE - vram_addr) {
     len = VRAM_SIZE - vram_addr;
   }
   memcpy(&tms9918->vram[vram_addr], buf, len);
+}
+
+void
+pico9918_memset(uint32_t vram_addr, uint8_t val, size_t len)
+{
+  vram_addr &= VRAM_MASK;
+  if (len > VRAM_SIZE - vram_addr) {
+    len = VRAM_SIZE - vram_addr;
+  }
+  memset(&tms9918->vram[vram_addr], val, len);
 }
