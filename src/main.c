@@ -41,6 +41,7 @@
 /* Local headers */
 #include "pico9918-glue.h"
 #include "tbvm.h"
+#include "vdp.h"
 
 /*****************************************************************************
  * Tiny-ish BASIC interfaces.
@@ -142,6 +143,9 @@ main(void)
 
 	/* Initialize the virtual 9918 VDP. */
 	pico9918_init();
+
+	/* Initialize the VDP TTY. */
+	vdp_tty_init();
 
 	for (;;) {
 		vm = tbvm_alloc(NULL);
