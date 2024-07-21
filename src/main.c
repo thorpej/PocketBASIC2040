@@ -66,8 +66,29 @@ jttb_closefile(void *vctx, void *vf)
 static int
 jttb_getchar(void *vctx, void *vf)
 {
+	int rv;
+
 	if (vf == TBVM_FILE_CONSOLE) {
-		return getchar();
+ again:
+		rv = getchar();
+		switch (rv) {
+		case 0x03:	/* CTRL-C -> BREAK */
+			rv = TBVM_BREAK;
+			break;
+
+		case 0x08:	/* pass CTRL-H (backspace) */
+		case 0x09:	/* pass CTRL-I (horizontal tab) */
+		case 0x0d:	/* pass CTRL-M (carraige return) */
+			break;
+
+		default:
+			/* space -> ~ are OK, discard everything else. */
+			if (rv < 0x20 || rv > 0x7e) {
+				goto again;
+			}
+			break;
+		}
+		return rv;
 	}
 	return EOF;
 }
@@ -76,6 +97,13 @@ static void
 jttb_putchar(void *vctx, void *vf, int ch)
 {
 	if (vf == TBVM_FILE_CONSOLE) {
+		/* Out to the VDP TTY. */
+		if (ch == '\n') {
+			vdp_tty_putc('\r');
+		}
+		vdp_tty_putc(ch);
+
+		/* ...and out to the Pico's UART. */
 		putchar(ch);
 	}
 }
