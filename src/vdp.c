@@ -234,7 +234,7 @@ static inline void
 vdp_setreg(int reg, uint8_t val)
 {
 	pico9918_write_reg(val);
-	pico9918_write_reg(reg & (VDP_NREGS - 1));
+	pico9918_write_reg(VDP_REG_WRITE | (reg & (VDP_NREGS - 1)));
 }
 
 static void
