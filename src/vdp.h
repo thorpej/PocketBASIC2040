@@ -33,6 +33,8 @@
 extern const uint8_t vdp_tty_font_tiles[];
 extern const size_t vdp_tty_font_ntiles;
 
+void	vdp_intr(uint8_t);
+
 void	vdp_tty_init(void);
 void	vdp_tty_putc(int);
 

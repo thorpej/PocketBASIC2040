@@ -129,7 +129,7 @@ static const struct tbvm_file_io jttb_file_io = {
 };
 
 /*****************************************************************************
- * VBLANK interrupt handler.
+ * VSYNC interrupt handler.
  *****************************************************************************/
 
 static void
@@ -148,7 +148,7 @@ __time_critical_func(core0_fifo_irq_handler)(void)
 	 * the sprite-related bits, too.
 	 */
 
-	/* XXX Update VRAM from shadow tile buffer. */
+	vdp_intr((uint8_t)vdp_status);
 }
 
 /*****************************************************************************

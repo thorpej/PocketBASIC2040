@@ -15,6 +15,7 @@
  */
 
 #include <stdbool.h>
+#include <string.h>
 
 #include "pico/stdlib.h"
 #include "pico/printf.h"
@@ -28,7 +29,6 @@
 #include "palette.h"
 
 #include "vrEmuTms9918Priv.h"
-#include "vrEmuTms9918Util.h"
 
 /*
  * This differs from what is used in the pico9918 project, although

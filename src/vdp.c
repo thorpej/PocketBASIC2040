@@ -33,7 +33,6 @@
 #include "pico/stdlib.h"
 
 /* Standard headers */
-#include <stdio.h>
 #include <string.h>
 
 /* Local headers */
@@ -292,6 +291,16 @@ vdp_load_tiles(uint32_t ptb, const uint8_t *tiles, size_t ntiles)
 		int tile = *tiles++;
 		pico9918_copyin(ptb + (tile * 8), tiles, 8);
 		tiles += 8;
+	}
+}
+
+/*****************************************************************************/
+
+void
+__time_critical_func(vdp_intr)(uint8_t sts)
+{
+	if (vdp->mode != NULL) {
+		vdp->mode->vdpm_intr(sts);
 	}
 }
 
