@@ -98,10 +98,22 @@ jttb_putchar(void *vctx, void *vf, int ch)
 {
 	if (vf == TBVM_FILE_CONSOLE) {
 		/* Out to the VDP TTY. */
-		if (ch == '\n') {
+		switch (ch) {
+		case '\b':	/* CTRL-H (backspace) */
+			vdp_tty_putc('\b');
+			vdp_tty_putc(' ');
+			vdp_tty_putc('\b');
+			break;
+
+		case '\n':
 			vdp_tty_putc('\r');
+			vdp_tty_putc('\n');
+			break;
+
+		default:
+			vdp_tty_putc(ch);
+			break;
 		}
-		vdp_tty_putc(ch);
 
 		/* ...and out to the Pico's UART. */
 		putchar(ch);
