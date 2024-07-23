@@ -10,6 +10,8 @@ set(BUILD_SHARED_LIBS OFF)
 
 add_definitions(-DPICO_BUILD=1)
 add_definitions(-DVR_EMU_TMS9918_SINGLE_INSTANCE=1)
+add_definitions(-DVGA_SYNC_PINS_START=18)
+add_definitions(-DVGA_RGB_PINS_START=6)
 
 add_subdirectory(submodules/JTTB/tbvm)
 add_subdirectory(submodules/pico9918/src/pio-utils)
