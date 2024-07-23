@@ -254,8 +254,8 @@ vdp_set_mode(const struct vdp_modedesc *mode)
 	/* Always set 16K RAM. */
 	vdp->regs[1] |= VDP_R1_16K;
 
-	/* Always start with screen off an intrs disabled. */
-	vdp->regs[1] &= (VDP_R1_SCREEN | VDP_R1_IE);
+	/* Always start with screen off and intrs disabled. */
+	vdp->regs[1] &= ~(VDP_R1_SCREEN | VDP_R1_IE);
 
 	vdp->mode = mode;
 
