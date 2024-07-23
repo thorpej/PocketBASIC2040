@@ -209,6 +209,18 @@
 #define	VDP_TXT_R0		0
 #define	VDP_TXT_R1		VDP_R1_M1
 
+/*
+ * The above definitions are also fine for TXT80 mode on the pico9918
+ * (the pattern table is located before the name table, so we don't
+ * have to move it for the larger name table that results from using
+ * 80 columns).
+ *
+ * (We technically don't even have to change R1 when going to 80
+ * column mode; pico9918 just looks for the M4 bit being set in R0.)
+ */
+#define	VDP_TXT80_R0		VDP_R0_M4
+#define	VDP_TXT80_R1		0
+
 /*****************************************************************************
  * VDP software descriptors
  *****************************************************************************/
