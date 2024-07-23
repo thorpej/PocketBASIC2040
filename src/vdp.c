@@ -47,7 +47,8 @@
 
 #define	VDP_R0_EXTIN_EN		0x01
 #define	VDP_R0_M3		0x02
-#define	VDP_R0_MODEMASK		VDP_R0_M3
+#define	VDP_R0_M4		0x04		/* pico9918 only (f18a?) */
+#define	VDP_R0_MODEMASK		(VDP_R0_M3 | VDP_R0_M4)
 
 #define	VDP_R1_SPRITE_MAG	0x01
 #define	VDP_R1_SPRITE_SIZE	0x02
@@ -63,11 +64,14 @@
 /*
  * VIDEO MODES
  *
- *	M1	M2	M3
- *	0	0	0	Graphics I
- *	0	0	1	Graphics II
- *	0	1	0	Multicolor
- *	1	0	0	Text
+ *	M1	M2	M3	M4
+ *	0	0	0	0	Graphics I
+ *	0	0	1	0	Graphics II
+ *	0	1	0	0	Multicolor
+ *	1	0	0	0	Text
+ *
+ * Additional modes on pico9918 (f18a?) */
+ *	0	0	0	1	80-column text
  */
 
 #define	VDP_VRAM_READ		0x00
