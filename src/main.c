@@ -221,7 +221,7 @@ main(void)
 	pico9918_init();
 
 	/* Initialize the VDP TTY. */
-	vdp_tty_init();
+	vdp_tty_init(40);
 
 	for (;;) {
 		vm = tbvm_alloc(NULL);

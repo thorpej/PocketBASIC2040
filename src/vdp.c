@@ -70,7 +70,7 @@
  *	0	1	0	0	Multicolor
  *	1	0	0	0	Text
  *
- * Additional modes on pico9918 (f18a?) */
+ * Additional modes on pico9918 (f18a?)
  *	0	0	0	1	80-column text
  */
 
@@ -344,8 +344,31 @@ const struct vdp_modedesc vdp_mode_text = {
 	.vdpm_intr	= vdp_tty_intr,
 };
 
+const struct vdp_modedesc vdp_mode_text80 = {
+	.vdpm_regs = {
+		[0]	= VDP_TXT80_R0,
+		[1]	= VDP_TXT80_R1,
+		[2]	= VDP_TXT_NTBA_DEFAULT >> VDP_R2_NTBA_SHIFT,
+		[3]	= VDP_TXT_CTBA_DEFAULT >> VDP_R3_CTBA_SHIFT,
+		[4]	= VDP_TXT_PGBA_DEFAULT >> VDP_R4_PGBA_SHIFT,
+		[5]	= VDP_TXT_SATBA_DEFAULT >> VDP_R5_SATBA_SHIFT,
+		[6]	= VDP_TXT_SPGBA_DEFAULT >> VDP_R6_SPGBA_SHIFT,
+		[7]	= (VDP_COLOR_WHITE << VDP_R7_FGCOL_SHIFT) |
+			  VDP_COLOR_LT_BLUE,
+	},
+	.vdpm_ntba	= VDP_TXT_NTBA_DEFAULT,
+	.vdpm_ctba	= VDP_TXT_CTBA_DEFAULT,
+	.vdpm_pgba	= VDP_TXT_PGBA_DEFAULT,
+	.vdpm_satba	= VDP_TXT_SATBA_DEFAULT,
+	.vdpm_spgba	= VDP_TXT_SPGBA_DEFAULT,
+	.vdpm_intr	= vdp_tty_intr,
+};
+
+#define	VDP_TTY_MAX_ROWS 24
+#define	VDP_TTY_MAX_COLS 80
+
 #define	VDP_TTY_ROWS	24
-#define	VDP_TTY_COLS	40
+static unsigned int vdp_tty_cols = 40;
 
 /*
  * The "phantom" row is the row that does not exist just below the
@@ -355,16 +378,16 @@ const struct vdp_modedesc vdp_mode_text = {
  * case until we try to put another character into the phantom row.
  */
 #define	VDP_TTY_LASTROW	(VDP_TTY_ROWS - 1)
-#define	VDP_TTY_LASTCOL	(VDP_TTY_COLS - 1)
+#define	VDP_TTY_LASTCOL	(vdp_tty_cols - 1)
 
-#define	VDP_TTY_ROWOFF(r)	((r) * VDP_TTY_COLS)
+#define	VDP_TTY_ROWOFF(r)	((r) * vdp_tty_cols)
 
 #define	VDP_TTY_CURSOR_TICKS	30	/* 1/2 second cursor timer */
 
 static bool vdp_tty_buf_locked;
 static bool vdp_tty_buf_dirty;
 
-static uint8_t vdp_tty_buf[VDP_TTY_ROWS * VDP_TTY_COLS];
+static uint8_t vdp_tty_buf[VDP_TTY_MAX_ROWS * VDP_TTY_MAX_COLS];
 static uint8_t *vdp_tty_pos;
 static int vdp_tty_row;
 static int vdp_tty_col;
@@ -436,10 +459,28 @@ vdp_tty_cursor_disable(void)
 }
 
 void
-vdp_tty_init(void)
+vdp_tty_init(unsigned int ncol)
 {
+	const struct vdp_modedesc *mode;
+
+	switch (ncol) {
+	case 40:
+		mode = &vdp_mode_text;
+		break;
+
+	case 80:
+		mode = &vdp_mode_text80;
+		break;
+
+	default:
+		/* Default to 40 col. */
+		mode = &vdp_mode_text;
+		ncol = 40;
+		break;
+	}
+
 	/* Set Text mode. */
-	vdp_set_mode(&vdp_mode_text);
+	vdp_set_mode(mode);
 
 	/* Initialize the shadow buffer with spaces. */
 	memset(vdp_tty_buf, ' ', sizeof(vdp_tty_buf));
@@ -514,11 +555,11 @@ vdp_tty_scroll(void)
 {
 	/* Copy rows 1-lastRow up one row. */
 	memcpy(vdp_tty_buf, &vdp_tty_buf[VDP_TTY_ROWOFF(1)],
-	    sizeof(vdp_tty_buf) - VDP_TTY_COLS);
+	    sizeof(vdp_tty_buf) - vdp_tty_cols);
 
 	/* Clear lastRow. */
 	memset(&vdp_tty_buf[VDP_TTY_ROWOFF(VDP_TTY_LASTROW)], ' ',
-	    VDP_TTY_COLS);
+	    vdp_tty_cols);
 }
 
 void
