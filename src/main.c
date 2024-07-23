@@ -43,6 +43,42 @@
 #include "tbvm.h"
 #include "vdp.h"
 
+/*
+ * We need the following GPIOs for hardware functions.  The PIO VGA interface
+ * needs 2 contiguous GPIOs for sync signals and 12 contiguous GPIOs for the
+ * 3 4-bit RGB signals.  XXX These are currently hard-coded as GP0-GP13 in the
+ * VGA submodule, will will have to be changed.
+ *
+ *   RP2040 GPIO        FUNCTION                Purpose              Pico pin
+ * ============================================================================
+ *	GP0		UART0 TX		Serial console		1
+ *	GP1		UART1 RX					2
+ *
+ *	GP2		SPI0 SCK		SD card interface	4
+ *	GP3		SPI0 MOSI					5
+ *	GP4		SPI0 MISO					6
+ *	GP5		SPI0 CSn					7
+ *
+ *	GP6		PIO0 SM1		VGA RGB data		9
+ *	GP7		PIO0 SM1					10
+ *	GP8		PIO0 SM1					11
+ *	GP9		PIO0 SM1					12
+ *	GP10		PIO0 SM1					14
+ *	GP11		PIO0 SM1					15
+ *	GP12		PIO0 SM1					16
+ *	GP13		PIO0 SM1					17
+ *	GP14		PIO0 SM1					19
+ *	GP15		PIO0 SM1					20
+ *	GP16		PIO0 SM1					21
+ *	GP17		PIO0 SM1					22
+ *
+ *	GP18		PIO0 SM0		VGA SYNC data		24
+ *	GP19		PIO0 SM0					25
+ *
+ *	GP20		I2C0 SDA		"future expansion"	26
+ *	GP21		I2C0 SCL					27
+ */
+
 /*****************************************************************************
  * Tiny-ish BASIC interfaces.
  *****************************************************************************/
