@@ -54,12 +54,11 @@
  *	GP0		UART0 TX		Serial console		1
  *	GP1		UART1 RX					2
  *
- *	GP2		SPI0 SCK		SD card interface	4
- *	GP3		SPI0 MOSI					5
- *	GP4		SPI0 MISO					6
- *	GP5		SPI0 CSn					7
- *
- *	GP6		PIO0 SM1		VGA RGB data		9
+ *	GP2		PIO0 SM1		VGA RGB data		4
+ *	GP3		PIO0 SM1					5
+ *	GP4		PIO0 SM1					6
+ *	GP5		PIO0 SM1					7
+ *	GP6		PIO0 SM1					9
  *	GP7		PIO0 SM1					10
  *	GP8		PIO0 SM1					11
  *	GP9		PIO0 SM1					12
@@ -67,17 +66,65 @@
  *	GP11		PIO0 SM1					15
  *	GP12		PIO0 SM1					16
  *	GP13		PIO0 SM1					17
- *	GP14		PIO0 SM1					19
- *	GP15		PIO0 SM1					20
- *	GP16		PIO0 SM1					21
- *	GP17		PIO0 SM1					22
  *
- *	GP18		PIO0 SM0		VGA SYNC data		24
- *	GP19		PIO0 SM0					25
+ *	GP14		PIO0 SM0		VGA SYNC data		19
+ *	GP15		PIO0 SM0					20
+ *
+ *	GP16		SPI0 MISO		SD card interface	21
+ *	GP17		SPI0 CSn					22
+ *	GP18		SPI0 SCK					24
+ *	GP19		SPI0 MOSI					25
  *
  *	GP20		I2C0 SDA		"future expansion"	26
  *	GP21		I2C0 SCL					27
  */
+
+#define	PIN_UART0_TX	0
+#define	PIN_UART0_RX	1
+
+#define	PIN_PIO0_FIRST	2
+#define	PIN_PIO0_LAST	15
+
+#define	PIN_SPI0_MISO	16
+#define	PIN_SPI0_CSn	17
+#define	PIN_SPI0_SCK	18
+#define	PIN_SPI0_MOSI	19
+
+#define	PIN_I2C0_SDA	20
+#define	PIN_I2C0_SCL	21
+
+static const struct gpio_pin_config {
+	unsigned int       first;
+	unsigned int       last;
+	enum gpio_function func;
+} gpio_pin_config[] = {
+	{ PIN_UART0_TX,		PIN_UART0_RX,		GPIO_FUNC_UART },
+
+	{ PIN_PIO0_FIRST,	PIN_PIO0_LAST,		GPIO_FUNC_PIO0 },
+
+	/*
+	 * SPI is special here, because we need more direct control
+	 * over the CS line.
+	 */
+	{ PIN_SPI0_MISO,	PIN_SPI0_MISO,		GPIO_FUNC_SPI },
+	{ PIN_SPI0_CSn,		PIN_SPI0_CSn,		GPIO_FUNC_SIO },
+	{ PIN_SPI0_SCK,		PIN_SPI0_MOSI,		GPIO_FUNC_SPI },
+
+	{ PIN_I2C0_SDA,		PIN_I2C0_SCL,		GPIO_FUNC_I2C },
+};
+static const size_t ngpio_pin_config =
+    sizeof(gpio_pin_config) / sizeof(gpio_pin_config[0]);
+
+static void
+config_gpio(void)
+{
+	for (size_t x = 0; x < ngpio_pin_config; x++) {
+		const struct gpio_pin_config *c = &gpio_pin_config[x];
+		for (unsigned int i = c->first; i <= c->last; i++) {
+			gpio_set_function(i, c->func);
+		}
+	}
+}
 
 /*****************************************************************************
  * Tiny-ish BASIC interfaces.
@@ -208,6 +255,8 @@ static const char version_string[] = "0.1";
 int
 main(void)
 {
+	config_gpio();
+
 	stdio_uart_init();
 
 	printf("PocketBASIC2040, version %s\n", version_string);
