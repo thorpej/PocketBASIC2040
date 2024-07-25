@@ -8,6 +8,7 @@ add_executable(pocketbasic2040
 	pico9918-glue.c
 	${PICO9918_SOURCE_DIR}/palette.c
 	vrEmuTms9918.c
+	sd.c
 	vdp.c
 	vdp-font-onascii.c
 	)
@@ -27,5 +28,6 @@ target_link_libraries(pocketbasic2040
 	tbvm
 	pico_stdlib
 	pico_multicore
+	hardware_spi
 	pico9918-vga
 	)

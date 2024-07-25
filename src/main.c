@@ -40,6 +40,7 @@
 
 /* Local headers */
 #include "pico9918-glue.h"
+#include "sd.h"
 #include "tbvm.h"
 #include "vdp.h"
 
@@ -271,6 +272,9 @@ main(void)
 
 	/* Initialize the VDP TTY. */
 	vdp_tty_init(40);
+
+	/* Initialize the SD card interface. */
+	sd_init(spi0, PIN_SPI0_CSn, -1);
 
 	for (;;) {
 		vm = tbvm_alloc(NULL);
