@@ -606,7 +606,7 @@ sd_mount(void)
 		 * This isn't the real erase block size.  We need to
 		 * get the AU_SIZE from the SD STATUS register.
 		 */
-		/* XXX */
+		/* XXX We can't get AU_SIZE over SPI. */
 	}
 
 	return sd_set_status(SD_NOERR);
