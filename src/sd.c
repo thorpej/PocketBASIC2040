@@ -95,6 +95,23 @@ static uint32_t sd_eblock_size;
 #define	OCR_CCS		(1U << 30)	/* valid only when OCR_PU_nBUSY */
 #define	OCR_PU_nBUSY	(1U << 31)	/* LOW when power-up finished */
 
+static bool
+sd_timed_out(uint64_t *curp, uint64_t timo_ms)
+{
+	uint64_t now = to_us_since_boot(get_absolute_time());
+
+	if (*curp == 0) {
+		*curp = now;
+	} else {
+		/* Allow a 1ms fudge factor. */
+		if ((now - *curp) > ((timo_ms + 1) * 1000)) {
+			return true;
+		}
+		*curp = now;
+	}
+	return false;
+}
+
 static void
 sd_cd_callback(unsigned int gpio, uint32_t events)
 {
@@ -307,8 +324,9 @@ sd_SD_SEND_OP_COND(void)
 static int
 sd_rdblk_CMD(uint8_t cmd, uint32_t blk, void *vbuf, size_t len)
 {
+	uint64_t timo;
 	uint8_t res, token;
-	int error, cnt;
+	int error;
 
 	sd_begin();
 
@@ -316,12 +334,12 @@ sd_rdblk_CMD(uint8_t cmd, uint32_t blk, void *vbuf, size_t len)
 	res = sd_recv_r1();
 	if (res != 0xff) {
 		/* Wait for response token. */
-		for (token = 0xff, cnt = 0; token != 0xff; cnt++) {
-			if (cnt > 4096) {	/* XXX 100ms */
+		for (timo = 0, token = 0xff; token != 0xff;) {
+			token = sd_recv_byte();
+			if (sd_timed_out(&timo, 100)) {
 				error = SD_ETIMEDOUT;
 				goto out;
 			}
-			token = sd_recv_byte();
 		}
 		if (token == 0xfe) {
 			/* Got data token, receive data. */
@@ -608,8 +626,9 @@ sd_rdblk(uint32_t blk, void *vbuf)
 int
 sd_wrblk(uint32_t blk, const void *vbuf)
 {
+	uint64_t timo;
 	uint8_t res, token = 0xff;
-	int error, cnt;
+	int error;
 
 	if ((error = sd_stat()) != SD_NOERR) {
 		return error;
@@ -631,17 +650,17 @@ sd_wrblk(uint32_t blk, const void *vbuf)
 		sd_send_byte(0xff);
 
 		/* Wait for response. */
-		for (token = 0xff, cnt = 0; token != 0xff; cnt++) {
-			if (cnt > 4096) {	/* XXX 250ms */
+		for (timo = 0, token = 0xff; token != 0xff;) {
+			token = sd_recv_byte();
+			if (sd_timed_out(&timo, 250)) {
 				error = SD_ETIMEDOUT;
 				goto out;
 			}
-			token = sd_recv_byte();
 		}
 		if ((token & 0x1f) == 0x05) {
 			/* Data accepted; wait for the write to complete. */
-			for (cnt = 0; sd_recv_byte() == 0; cnt++) {
-				if (cnt > 4096) { /* XXX 250ms */
+			for (timo = 0; sd_recv_byte() == 0;) {
+				if (sd_timed_out(&timo, 250)) {
 					error = SD_ETIMEDOUT;
 					goto out;
 				}
