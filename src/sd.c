@@ -46,6 +46,9 @@
 static spi_inst_t *sd_spi;
 static int sd_cs_gpio;
 static int sd_cd_gpio;
+static int sd_sticky_status;
+static uint32_t sd_block_count;
+static uint32_t sd_eblock_size;
 
 #define	SD_SPI_CLKSPEED	(25 * 1000000)
 
@@ -92,36 +95,20 @@ static int sd_cd_gpio;
 #define	OCR_CCS		(1U << 30)	/* valid only when OCR_PU_nBUSY */
 #define	OCR_PU_nBUSY	(1U << 31)	/* LOW when power-up finished */
 
-void
-sd_init(spi_inst_t *spi, int cs_gpio, int cd_gpio)
+static void
+sd_cd_callback(unsigned int gpio, uint32_t events)
 {
 	/*
-	 * We arrive here assuming that the SPI block has been
-	 * assigned to a set of pins, but no more than that.
-	 *
-	 * Because we need more precise control over the CS line
-	 * for SD cards, we will re-configure the cs_gpio as a
-	 * generic GPIO.  We will also configure it as an input,
-	 * pulled high.  When we wish to assert CS, we will switch
-	 * direction and drive as a low output.
+	 * CD GPIO has transitioned from low to high, meaning the
+	 * card has been removed from the slot.
 	 */
-	spi_init(spi, SD_SPI_CLKSPEED);
-	spi_set_format(spi,
-		       8,		/* data bits */
-		       SPI_CPOL_0,	/* mode 0 */
-		       SPI_CPHA_0,
-		       SPI_MSB_FIRST);
+	sd_sticky_status = SD_ENODEV;
+}
 
-	gpio_init(cs_gpio);
-	gpio_set_dir(cs_gpio, false);
-	gpio_set_pulls(cs_gpio, true, false);
-	gpio_put(cs_gpio, false);
-
-	/* XXX cd_gpio */
-
-	sd_spi = spi;
-	sd_cs_gpio = cs_gpio;
-	sd_cd_gpio = cd_gpio;
+static inline int
+sd_set_status(int err)
+{
+	return (sd_sticky_status = err);
 }
 
 static inline void
@@ -134,6 +121,12 @@ static inline void
 sd_cs_deassert(void)
 {
 	gpio_set_dir(sd_cs_gpio, false);
+}
+
+static inline bool
+sd_card_present_p(void)
+{
+	return !gpio_get(sd_cd_gpio);
 }
 
 static inline void
@@ -204,10 +197,10 @@ sd_command(uint8_t cmd, uint32_t arg, uint8_t crc)
 	uint8_t buf[SD_SPI_CMDLEN];
 
 	buf[0] = cmd | 0x40;
-	buf[1] = (uint8_t)(cmd >> 24);
-	buf[2] = (uint8_t)(cmd >> 16);
-	buf[3] = (uint8_t)(cmd >> 8);
-	buf[4] = (uint8_t)(cmd);
+	buf[1] = (uint8_t)(arg >> 24);
+	buf[2] = (uint8_t)(arg >> 16);
+	buf[3] = (uint8_t)(arg >> 8);
+	buf[4] = (uint8_t)(arg);
 	buf[5] = (crc << 1) | 0x01;
 
 	sd_send(buf, sizeof(buf));
@@ -311,6 +304,92 @@ sd_ACMD41(void)
 	return rv;
 }
 
+void
+sd_init(spi_inst_t *spi, int cs_gpio, int cd_gpio)
+{
+	/*
+	 * We arrive here assuming that the SPI block has been
+	 * assigned to a set of pins, but no more than that.
+	 *
+	 * Because we need more precise control over the CS line
+	 * for SD cards, we will re-configure the cs_gpio as a
+	 * generic GPIO.  We will also configure it as an input,
+	 * pulled high.  When we wish to assert CS, we will switch
+	 * direction and drive as a low output.
+	 */
+	spi_init(spi, SD_SPI_CLKSPEED);
+	spi_set_format(spi,
+		       8,		/* data bits */
+		       SPI_CPOL_0,	/* mode 0 */
+		       SPI_CPHA_0,
+		       SPI_MSB_FIRST);
+
+	/*
+	 * CS GPIO: Input, pull-up.  Output value set to low.
+	 * When we want to drive the output low, we change the
+	 * direction to an output, thus simulating an open-drain
+	 * type output.
+	 */
+	gpio_init(cs_gpio);
+	gpio_set_dir(cs_gpio, false);
+	gpio_set_pulls(cs_gpio, true, false);
+	gpio_put(cs_gpio, false);
+
+	/*
+	 * CD GPIO: Input, pull-up.  When a card is inserted into the
+	 * slot, the CD pin is grounded.  We take an interrupt on the
+	 * rising edge of this GPIO to set the sticky status to ENODEV.
+	 */
+	gpio_init(cd_gpio);
+	gpio_set_dir(cd_gpio, false);
+	gpio_set_pulls(cs_gpio, true, false);
+	gpio_set_irq_enabled_with_callback(cd_gpio, GPIO_IRQ_EDGE_RISE,
+	    true, sd_cd_callback);
+
+	/*
+	 * Sticky status defaults to ENODEV or ENOTINIT, depending on
+	 * current value of CD pin.
+	 */
+	sd_sticky_status = sd_card_present_p() ? SD_ENOTINIT : SD_ENODEV;
+
+	sd_spi = spi;
+	sd_cs_gpio = cs_gpio;
+	sd_cd_gpio = cd_gpio;
+}
+
+int
+sd_stat(void)
+{
+	if (! sd_card_present_p()) {
+		return sd_set_status(SD_ENODEV);
+	}
+	return sd_sticky_status;
+}
+
+int
+sd_blkcnt(uint32_t *valp)
+{
+	int error;
+
+	if ((error = sd_stat()) != SD_NOERR) {
+		return error;
+	}
+	*valp = sd_block_count;
+	return SD_NOERR;
+}
+
+int
+sd_eblksz(uint32_t *valp)
+{
+	int error;
+
+	if ((error = sd_stat()) != SD_NOERR) {
+		return error;
+	}
+	*valp = sd_eblock_size;
+	return SD_NOERR;
+}
+
 int
 sd_mount(void)
 {
@@ -318,13 +397,17 @@ sd_mount(void)
 	uint8_t res;
 	int cnt;
 
+	if (! sd_card_present_p()) {
+		return sd_set_status(SD_ENODEV);
+	}
+
 	/* Power up the card */
 	sd_powerup();
 
 	/* Put card in idle state. */
 	for (cnt = 0;; cnt++) {
 		if (cnt > 10) {
-			return SD_ETIMEDOUT;
+			return sd_set_status(SD_ETIMEDOUT);
 		}
 		res = sd_CMD0();
 		if (res == R1_IDLE_STATE) {
@@ -338,7 +421,7 @@ sd_mount(void)
 	 */
 	for (cnt = 0;; cnt++) {
 		if (cnt > 10) {
-			return SD_ENOTSUP;
+			return sd_set_status(SD_ENOTSUP);
 		}
 		res = sd_CMD8(&val32);
 		if (res == R1_IDLE_STATE) {
@@ -354,7 +437,7 @@ sd_mount(void)
 	/* Initialize the card. */
 	for (cnt = 0;; cnt++) {
 		if (cnt > 100) {
-			return SD_ETIMEDOUT;
+			return sd_set_status(SD_ETIMEDOUT);
 		}
 		res = sd_ACMD41();
 		if (res == 0) {
@@ -366,26 +449,29 @@ sd_mount(void)
 	/* Get OCR value. */
 	res = sd_CMD58(&val32);
 	if (res != 0) {
-		return SD_ENOTSUP;
+		return sd_set_status(SD_ENOTSUP);
 	}
 	if ((val32 & OCR_PU_nBUSY) == 0) {
 		/* Card failed to initialize. */
-		return SD_ETIMEDOUT;
+		return sd_set_status(SD_ETIMEDOUT);
 	}
 	if ((val32 & OCR_CCS) == 0) {
 		/* Not HC / XC card; reject these types. */
-		return SD_ENOTSUP;
+		return sd_set_status(SD_ENOTSUP);
 	}
 
-	return 0;
+	return sd_set_status(SD_NOERR);
 }
 
 int
 sd_rdblk(uint32_t blk, void *vbuf)
 {
 	uint8_t res, token;
-	int error = SD_ETIMEDOUT;
-	int cnt;
+	int error, cnt;
+
+	if ((error = sd_stat()) != SD_NOERR) {
+		return error;
+	}
 
 	sd_begin();
 
@@ -395,6 +481,7 @@ sd_rdblk(uint32_t blk, void *vbuf)
 		/* Wait for response token. */
 		for (token = 0xff, cnt = 0; token != 0xff; cnt++) {
 			if (cnt > 4096) {	/* XXX 100ms */
+				error = SD_ETIMEDOUT;
 				goto out;
 			}
 			token = sd_recv_byte();
@@ -406,9 +493,6 @@ sd_rdblk(uint32_t blk, void *vbuf)
 			/* Receive (and discard) 16-bit CRC. */
 			sd_recv_byte();
 			sd_recv_byte();
-
-			/* Successfully read the block. */
-			error = 0;
 		} else if ((token & 0xf0) == 0) {
 			/* Got error token. */
 			if (token & (1U << 3)) {
@@ -435,8 +519,11 @@ int
 sd_wrblk(uint32_t blk, const void *vbuf)
 {
 	uint8_t res, token = 0xff;
-	int error = SD_ETIMEDOUT;
-	int cnt;
+	int error, cnt;
+
+	if ((error = sd_stat()) != SD_NOERR) {
+		return error;
+	}
 
 	sd_begin();
 
@@ -456,6 +543,7 @@ sd_wrblk(uint32_t blk, const void *vbuf)
 		/* Wait for response. */
 		for (token = 0xff, cnt = 0; token != 0xff; cnt++) {
 			if (cnt > 4096) {	/* XXX 250ms */
+				error = SD_ETIMEDOUT;
 				goto out;
 			}
 			token = sd_recv_byte();
@@ -464,13 +552,10 @@ sd_wrblk(uint32_t blk, const void *vbuf)
 			/* Data accepted; wait for the write to complete. */
 			for (cnt = 0; sd_recv_byte() == 0; cnt++) {
 				if (cnt > 4096) { /* XXX 250ms */
-					/* XXX EIO? */
+					error = SD_ETIMEDOUT;
 					goto out;
 				}
 			}
-
-			/* Successfully wrote the block. */
-			error = 0;
 		} else {
 			/* Everything else maps to EIO. */
 			error = SD_EIO;

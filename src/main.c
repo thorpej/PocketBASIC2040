@@ -78,6 +78,8 @@
  *
  *	GP20		I2C0 SDA		"future expansion"	26
  *	GP21		I2C0 SCL					27
+ *
+ *	GP22		SIO			SD Card Detect		29
  */
 
 #define	PIN_UART0_TX	0
@@ -93,6 +95,8 @@
 
 #define	PIN_I2C0_SDA	20
 #define	PIN_I2C0_SCL	21
+
+#define	PIN_SD_CDn	22
 
 static const struct gpio_pin_config {
 	unsigned int       first;
@@ -112,6 +116,8 @@ static const struct gpio_pin_config {
 	{ PIN_SPI0_SCK,		PIN_SPI0_MOSI,		GPIO_FUNC_SPI },
 
 	{ PIN_I2C0_SDA,		PIN_I2C0_SCL,		GPIO_FUNC_I2C },
+
+	{ PIN_SD_CDn,		PIN_SD_CDn,		GPIO_FUNC_SIO },
 };
 static const size_t ngpio_pin_config =
     sizeof(gpio_pin_config) / sizeof(gpio_pin_config[0]);
@@ -274,7 +280,7 @@ main(void)
 	vdp_tty_init(40);
 
 	/* Initialize the SD card interface. */
-	sd_init(spi0, PIN_SPI0_CSn, -1);
+	sd_init(spi0, PIN_SPI0_CSn, PIN_SD_CDn);
 
 	for (;;) {
 		vm = tbvm_alloc(NULL);

@@ -32,12 +32,21 @@
 #include <stdint.h>
 
 /* Errors from the SD card driver. */
-#define	SD_EINVAL		1
-#define	SD_ETIMEDOUT		2
-#define	SD_ENOTSUP		3
-#define	SD_EIO			4
+#define	SD_NOERR		0
+#define	SD_ENODEV		1
+#define	SD_ENOTINIT		2
+#define	SD_EINVAL		3
+#define	SD_ETIMEDOUT		4
+#define	SD_ENOTSUP		5
+#define	SD_EIO			6
+#define	SD_EROFS		7
+
+#define	SD_SECSIZE		512
 
 void	sd_init(spi_inst_t *, int /*CS*/, int /*CD*/);
+int	sd_stat(void);
+int	sd_blkcnt(uint32_t *);
+int	sd_eblksz(uint32_t *);
 int	sd_mount(void);
 int	sd_rdblk(uint32_t, void *);
 int	sd_wrblk(uint32_t, const void *);
