@@ -11,6 +11,8 @@ add_executable(pocketbasic2040
 	sd.c
 	vdp.c
 	vdp-font-onascii.c
+	diskio.c
+	ff15/ff.c
 	)
 
 # create map/bin/hex file etc.
@@ -22,6 +24,8 @@ add_compile_options(-Wall
 
 target_include_directories(pocketbasic2040 PRIVATE
 	${PICO9918_SOURCE_DIR}
+	${CMAKE_CURRENT_LIST_DIR}/ff15
+	${CMAKE_CURRENT_LIST_DIR}
 	)
 
 target_link_libraries(pocketbasic2040
