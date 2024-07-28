@@ -488,7 +488,7 @@ sd_rdblk(uint32_t blk, void *vbuf)
 		}
 		if (token == 0xfe) {
 			/* Got data token, receive data. */
-			sd_recv(vbuf, 512);
+			sd_recv(vbuf, SD_SECSIZE);
 
 			/* Receive (and discard) 16-bit CRC. */
 			sd_recv_byte();
@@ -534,7 +534,7 @@ sd_wrblk(uint32_t blk, const void *vbuf)
 		sd_send_byte(0xfe);
 
 		/* Send the data */
-		sd_send(vbuf, 512);
+		sd_send(vbuf, SD_SECSIZE);
 
 		/* Send dummy CRC (it's ignored). */
 		sd_send_byte(0xff);
