@@ -68,7 +68,7 @@ static uint32_t sd_eblock_size;
 
 #define	SD_R3_R7_LEN	5
 
-/* CMD8 / R7 voltage suppled / accepted values */
+/* SEND_IF_COND / R7 voltage suppled / accepted values */
 #define	R7_VA_2v7_3v6	(1U << 0)
 #define	R7_VA_LV	(1U << 1)
 
@@ -237,7 +237,7 @@ sd_recv_r3_r7(uint32_t *valp)
 }
 
 static uint8_t
-sd_CMD0(void)
+sd_GO_IDLE_STATE(void)
 {
 	uint8_t rv;
 
@@ -250,7 +250,7 @@ sd_CMD0(void)
 }
 
 static uint8_t
-sd_CMD8(uint32_t *valp)
+sd_SEND_IF_COND(uint32_t *valp)
 {
 	uint8_t rv;
 
@@ -263,7 +263,7 @@ sd_CMD8(uint32_t *valp)
 }
 
 static uint8_t
-sd_CMD55(void)
+sd_APP_CMD(void)
 {
 	uint8_t rv;
 
@@ -276,7 +276,7 @@ sd_CMD55(void)
 }
 
 static uint8_t
-sd_CMD58(uint32_t *valp)
+sd_READ_OCR(uint32_t *valp)
 {
 	uint8_t rv;
 
@@ -289,11 +289,11 @@ sd_CMD58(uint32_t *valp)
 }
 
 static uint8_t
-sd_ACMD41(void)
+sd_SD_SEND_OP_COND(void)
 {
 	uint8_t rv;
 
-	rv = sd_CMD55();
+	rv = sd_APP_CMD();
 	if (! RES_ISERROR(rv)) {
 		sd_begin();
 		sd_command(41, 0x40000000, 0);
@@ -303,6 +303,119 @@ sd_ACMD41(void)
 
 	return rv;
 }
+
+static int
+sd_rdblk_CMD(uint8_t cmd, uint32_t blk, void *vbuf, size_t len)
+{
+	uint8_t res, token;
+	int error, cnt;
+
+	sd_begin();
+
+	sd_command(cmd, blk, 0);
+	res = sd_recv_r1();
+	if (res != 0xff) {
+		/* Wait for response token. */
+		for (token = 0xff, cnt = 0; token != 0xff; cnt++) {
+			if (cnt > 4096) {	/* XXX 100ms */
+				error = SD_ETIMEDOUT;
+				goto out;
+			}
+			token = sd_recv_byte();
+		}
+		if (token == 0xfe) {
+			/* Got data token, receive data. */
+			sd_recv(vbuf, len);
+
+			/* Receive (and discard) 16-bit CRC. */
+			sd_recv_byte();
+			sd_recv_byte();
+		} else if ((token & 0xf0) == 0) {
+			/* Got error token. */
+			if (token & (1U << 3)) {
+				/* Out Of Range error */
+				error = SD_EINVAL;
+			} else {
+				error = SD_EIO;
+			}
+		} else if (res & R1_PARAM_ERR) {
+			/* Fall back on the R1 response. */
+			error = SD_EINVAL;
+		} else {
+			/* &shrug; */
+			error = SD_EIO;
+		}
+	}
+
+ out:
+	sd_end();
+	return error;
+}
+
+#define	CSD_V1		0
+#define	CSD_V2		1
+#define	CSD_V3		2
+
+static int
+sd_SEND_CSD(int *versp, uint32_t *blkcntp, uint32_t *eblksizep)
+{
+	uint8_t buf[16];
+	int error;
+
+	error = sd_rdblk_CMD(9, 0, buf, sizeof(buf));
+	if (error) {
+		return error;
+	}
+
+	/*
+	 * This assumes CSD 2.0, which is valid for SDHC and SDXC.
+	 */
+	uint8_t csd_vers = buf[15] >> 6;
+	*versp = csd_vers;
+
+	if (csd_vers < CSD_V2) {
+		return SD_ENOTSUP;
+	}
+
+	uint32_t c_size =   buf[6]                |
+			  ( buf[7]         <<  8) |
+			  ((buf[8] & 0x3f) << 16);
+
+	/* Capacity is C_SIZE * 512KB. */
+	uint64_t cap64 = (uint64_t)c_size * (512 * 1024);
+	uint64_t blkcnt64 = cap64 / SD_SECSIZE;
+
+	/* Saturate the block count. */
+	if (blkcnt64 > UINT32_MAX) {
+		blkcnt64 = UINT32_MAX;
+	}
+	*blkcntp = (uint32_t)blkcnt64;
+
+	/*
+	 * Erase block size is fixed as 64KB in CSD v2.  The
+	 * real erase size should be determined using AU_SIZE
+	 * in the SD STATUS register.
+	 */
+	*eblksizep = (64 * 1024);
+
+	return SD_NOERR;
+}
+
+#if 0
+static int
+sd_SEND_CID(struct sd_cid_info *info)
+{
+	uint8_t buf[16];
+	int error;
+
+	error = sd_rdblk_CMD(10, 0, buf, sizeof(buf));
+	if (error) {
+		return error;
+	}
+
+	return SD_NOERR;
+}
+#endif
 
 void
 sd_init(spi_inst_t *spi, int cs_gpio, int cd_gpio)
@@ -395,7 +508,7 @@ sd_mount(void)
 {
 	uint32_t val32;
 	uint8_t res;
-	int cnt;
+	int error, cnt;
 
 	if (! sd_card_present_p()) {
 		return sd_set_status(SD_ENODEV);
@@ -409,7 +522,7 @@ sd_mount(void)
 		if (cnt > 10) {
 			return sd_set_status(SD_ETIMEDOUT);
 		}
-		res = sd_CMD0();
+		res = sd_GO_IDLE_STATE();
 		if (res == R1_IDLE_STATE) {
 			break;
 		}
@@ -423,7 +536,7 @@ sd_mount(void)
 		if (cnt > 10) {
 			return sd_set_status(SD_ENOTSUP);
 		}
-		res = sd_CMD8(&val32);
+		res = sd_SEND_IF_COND(&val32);
 		if (res == R1_IDLE_STATE) {
 			break;
 		}
@@ -439,7 +552,7 @@ sd_mount(void)
 		if (cnt > 100) {
 			return sd_set_status(SD_ETIMEDOUT);
 		}
-		res = sd_ACMD41();
+		res = sd_SD_SEND_OP_COND();
 		if (res == 0) {
 			break;
 		}
@@ -447,7 +560,7 @@ sd_mount(void)
 	}
 
 	/* Get OCR value. */
-	res = sd_CMD58(&val32);
+	res = sd_READ_OCR(&val32);
 	if (res != 0) {
 		return sd_set_status(SD_ENOTSUP);
 	}
@@ -460,59 +573,36 @@ sd_mount(void)
 		return sd_set_status(SD_ENOTSUP);
 	}
 
+	int csd_vers;
+	uint32_t block_count, eblock_size;
+
+	error = sd_SEND_CSD(&csd_vers, &block_count, &eblock_size);
+	if (error != SD_NOERR) {
+		return sd_set_status(error);
+	}
+	sd_block_count = block_count;
+	sd_eblock_size = eblock_size;
+
+	if (csd_vers >= CSD_V2) {
+		/*
+		 * This isn't the real erase block size.  We need to
+		 * get the AU_SIZE from the SD STATUS register.
+		 */
+		/* XXX */
+	}
+
 	return sd_set_status(SD_NOERR);
 }
 
 int
 sd_rdblk(uint32_t blk, void *vbuf)
 {
-	uint8_t res, token;
-	int error, cnt;
+	int error;
 
 	if ((error = sd_stat()) != SD_NOERR) {
 		return error;
 	}
-
-	sd_begin();
-
-	sd_command(17, blk, 0);
-	res = sd_recv_r1();
-	if (res != 0xff) {
-		/* Wait for response token. */
-		for (token = 0xff, cnt = 0; token != 0xff; cnt++) {
-			if (cnt > 4096) {	/* XXX 100ms */
-				error = SD_ETIMEDOUT;
-				goto out;
-			}
-			token = sd_recv_byte();
-		}
-		if (token == 0xfe) {
-			/* Got data token, receive data. */
-			sd_recv(vbuf, SD_SECSIZE);
-
-			/* Receive (and discard) 16-bit CRC. */
-			sd_recv_byte();
-			sd_recv_byte();
-		} else if ((token & 0xf0) == 0) {
-			/* Got error token. */
-			if (token & (1U << 3)) {
-				/* Out Of Range error */
-				error = SD_EINVAL;
-			} else {
-				error = SD_EIO;
-			}
-		} else if (res & R1_PARAM_ERR) {
-			/* Fall back on the R1 response. */
-			error = SD_EINVAL;
-		} else {
-			/* &shrug; */
-			error = SD_EIO;
-		}
-	}
-
- out:
-	sd_end();
-	return error;
+	return sd_rdblk_CMD(17, blk, vbuf, SD_SECSIZE);
 }
 
 int
