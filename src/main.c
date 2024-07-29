@@ -40,6 +40,7 @@
 
 /* Local headers */
 #include "pico9918-glue.h"
+#include "dsrtc.h"
 #include "sd.h"
 #include "tbvm.h"
 #include "vdp.h"
@@ -78,7 +79,7 @@
  *	GP18		SPI0 SCK					24
  *	GP19		SPI0 MOSI					25
  *
- *	GP20		I2C0 SDA		"future expansion"	26
+ *	GP20		I2C0 SDA		RTC, etc.		26
  *	GP21		I2C0 SCL					27
  *
  *	GP22		SIO			SD Card Detect		29
@@ -144,15 +145,9 @@ static FATFS fat0;
 DWORD
 get_fattime(void)
 {
-	datetime_t t = {
-		.year	= 2024,
-		.month	= 07,
-		.day	= 28,
-		.dotw	= 0,
-		.hour	= 17,
-		.min	= 25,
-		.sec	= 00,
-	};
+	datetime_t t;
+
+	dsrtc_gettime(&t);
 
 	return (((DWORD)t.year - 1980) << 25) |
 	        ((DWORD)t.month        << 21) |
@@ -481,6 +476,10 @@ main(void)
 
 	/* Initialize the VDP TTY. */
 	vdp_tty_init(40);
+
+	/* Initialize I2C and peripherals. */
+	i2c_init(i2c0, 100000);		/* 100KHz */
+	dsrtc_init(i2c0);
 
 	/* Initialize the SD card interface. */
 	sd_init(spi0, PIN_SPI0_CSn, PIN_SD_CDn);
