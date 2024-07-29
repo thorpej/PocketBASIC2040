@@ -44,6 +44,8 @@
 #include "tbvm.h"
 #include "vdp.h"
 
+#include "ff.h"
+
 /*
  * We need the following GPIOs for hardware functions.  The PIO VGA interface
  * needs 2 contiguous GPIOs for sync signals and 12 contiguous GPIOs for the
@@ -134,22 +136,218 @@ config_gpio(void)
 }
 
 /*****************************************************************************
+ * FatFs glue
+ *****************************************************************************/
+
+static FATFS fat0;
+
+DWORD
+get_fattime(void)
+{
+	datetime_t t = {
+		.year	= 2024,
+		.month	= 07,
+		.day	= 28,
+		.dotw	= 0,
+		.hour	= 17,
+		.min	= 25,
+		.sec	= 00,
+	};
+
+	return (((DWORD)t.year - 1980) << 25) |
+	        ((DWORD)t.month        << 21) |
+		((DWORD)t.day          << 16) |
+		((DWORD)t.hour         << 11) |
+		((DWORD)t.min          <<  5) |
+		((DWORD)t.sec               );
+}
+
+/* This implements a simple buffered I/O layer for FatFs. */
+
+#define	FATFS_FILEBUF_SIZE	1024
+#define	FATFS_FILEBUF_UNK	0
+#define	FATFS_FILEBUF_READ	1
+#define	FATFS_FILEBUF_WRITE	2
+#define	FATFS_FILEBUF_EOF	3
+
+struct fatfs_file {
+	FIL	f_fil;
+	int	f_mode;
+	char	f_buf[FATFS_FILEBUF_SIZE];
+	uint	f_bufsize;	/* only used for READ */
+	uint	f_bufidx;
+	FSIZE_t	f_bufoff;
+	int	f_bufdir;
+};
+
+static inline bool
+fatfs_file_dirty_p(struct fatfs_file *f)
+{
+	return ((f->f_mode & FA_WRITE) != 0 &&
+	        f->f_bufdir == FATFS_FILEBUF_WRITE &&
+		f->f_bufidx != 0);
+}
+
+static void
+fatfs_file_clean(struct fatfs_file *f)
+{
+	if (fatfs_file_dirty_p(f)) {
+		UINT actual;
+		FRESULT res;
+
+		res = f_write(&f->f_fil, f->f_buf, f->f_bufidx, &actual);
+		(void)res;	/* XXX report error */
+	}
+	f->f_bufsize = 0;
+	f->f_bufidx = 0;
+	f->f_bufoff = f_tell(&f->f_fil);
+	f->f_bufdir = FATFS_FILEBUF_UNK;
+}
+
+static void
+fatfs_file_load(struct fatfs_file *f)
+{
+	UINT actual;
+	FRESULT res;
+
+	fatfs_file_clean(f);
+	actual = 0;
+	res = f_read(&f->f_fil, f->f_buf, FATFS_FILEBUF_SIZE, &actual);
+	(void)res;		/* XXX report error */
+	f->f_bufsize = actual;
+	f->f_bufidx = 0;
+	f->f_bufdir = actual != 0 ? FATFS_FILEBUF_READ : FATFS_FILEBUF_EOF;
+}
+
+static int
+fatfs_file_getc(struct fatfs_file *f)
+{
+	int rv;
+
+	if ((f->f_mode & FA_READ) == 0) {
+		return EOF;
+	}
+
+	switch (f->f_bufdir) {
+	case FATFS_FILEBUF_WRITE:
+	case FATFS_FILEBUF_UNK:
+		fatfs_file_load(f);
+		break;
+
+	default:
+		break;
+	}
+
+	if (f->f_bufdir == FATFS_FILEBUF_EOF) {
+		return EOF;
+	}
+
+	rv = f->f_buf[f->f_bufidx++];
+	if (f->f_bufidx == f->f_bufsize) {
+		fatfs_file_load(f);
+	}
+	return rv;
+}
+
+static void
+fatfs_file_putc(struct fatfs_file *f, int ch)
+{
+	if ((f->f_mode & FA_WRITE) == 0) {
+		/* XXX report error */
+		return;
+	}
+
+	switch (f->f_bufdir) {
+	case FATFS_FILEBUF_UNK:
+		f->f_bufdir = FATFS_FILEBUF_WRITE;
+		/* FALLTHROUGH */
+
+	case FATFS_FILEBUF_WRITE:
+		break;
+
+	default:
+		fatfs_file_clean(f);
+		f->f_bufdir = FATFS_FILEBUF_WRITE;
+		break;
+	}
+
+	f->f_buf[f->f_bufidx++] = (char)ch;
+	if (f->f_bufidx == FATFS_FILEBUF_SIZE) {
+		fatfs_file_clean(f);
+	}
+}
+
+/*****************************************************************************
  * Tiny-ish BASIC interfaces.
  *****************************************************************************/
 
 static tbvm	*vm;
 
+static int
+mode2fatfs(const char *mode)
+{
+	bool in_p = false;
+	bool out_p = false;
+	const char *cp;
+
+	for (cp = mode; *cp != '\0'; cp++) {
+		switch (*cp) {
+		case 'i':
+		case 'I':
+			in_p = true;
+			break;
+
+		case 'o':
+		case 'O':
+			out_p = true;
+			break;
+
+		default:
+			break;
+		}
+	}
+
+	if (in_p && out_p) {
+		return FA_READ | FA_WRITE;
+	} else if (in_p) {
+		return FA_READ;
+	} else if (out_p) {
+		return FA_CREATE_ALWAYS | FA_WRITE;
+	} else {
+		return -1;
+	}
+}
+
 static void *
 jttb_openfile(void *vctx, const char *fname, const char *mode)
 {
-	return NULL;
+	BYTE fmode = mode2fatfs(mode);
+	if (fmode == -1) {
+		return NULL;
+	}
+
+	struct fatfs_file *f = calloc(1, sizeof(struct fatfs_file));
+	if (f == NULL) {
+		return NULL;
+	}
+
+	FRESULT res = f_open(&f->f_fil, fname, fmode);
+	if (res != FR_OK) {
+		free(f);
+		f = NULL;
+	}
+	f->f_mode = fmode;
+	return f;
 }
 
 static void
 jttb_closefile(void *vctx, void *vf)
 {
 	if (vf != TBVM_FILE_CONSOLE) {
-		/* XXX */
+		struct fatfs_file *f = vf;
+		fatfs_file_clean(f);
+		f_close(&f->f_fil);
+		free(f);
 	}
 }
 
@@ -178,9 +376,11 @@ jttb_getchar(void *vctx, void *vf)
 			}
 			break;
 		}
-		return rv;
+	} else {
+		struct fatfs_file *f = vf;
+		rv = fatfs_file_getc(f);
 	}
-	return EOF;
+	return rv;
 }
 
 static void
@@ -207,6 +407,9 @@ jttb_putchar(void *vctx, void *vf, int ch)
 
 		/* ...and out to the Pico's UART. */
 		putchar(ch);
+	} else {
+		struct fatfs_file *f = vf;
+		fatfs_file_putc(f, ch);
 	}
 }
 
@@ -281,6 +484,9 @@ main(void)
 
 	/* Initialize the SD card interface. */
 	sd_init(spi0, PIN_SPI0_CSn, PIN_SD_CDn);
+
+	/* Mount the file system (lazily). */
+	f_mount(&fat0, "", 0);
 
 	for (;;) {
 		vm = tbvm_alloc(NULL);

@@ -13,6 +13,7 @@ add_executable(pocketbasic2040
 	vdp-font-onascii.c
 	diskio.c
 	ff15/ff.c
+	ff15/ffunicode.c
 	)
 
 # create map/bin/hex file etc.
