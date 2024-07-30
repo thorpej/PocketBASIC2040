@@ -212,7 +212,7 @@ dsrtc_gettime(datetime_t *t)
 		dsrtc_clock_read(&check);
 	} while (memcmp(t, &check, sizeof(check)) != 0 && --retries);
 
-	return 0;
+	return;
 }
 
 void
