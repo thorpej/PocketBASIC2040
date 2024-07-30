@@ -64,6 +64,7 @@ pico9918_post_interrupt(void)
    */
   uint32_t val = currentStatus;
   currentStatus = 0;
+  vrEmuTms9918SetStatusImpl(currentStatus);
   multicore_fifo_push_timeout_us(val, 0);
 }
 
@@ -276,7 +277,8 @@ pico9918_read_status(void)
   /*
    * We don't expect this to be used too often because we're pushing
    * the STATUS register value directly to the end-of-frame interrupt
-   * on Core 0.
+   * on Core 0.  Note the status register will be cleared in Core 1's
+   * interrupt handler.
    */
   uint8_t rv = currentStatus;
   multicore_fifo_push_blocking(REG_MODE);
