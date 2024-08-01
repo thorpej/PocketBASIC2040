@@ -478,7 +478,11 @@ main(void)
 	irq_set_exclusive_handler(SIO_IRQ_PROC0, core0_fifo_irq_handler);
 	irq_set_enabled(SIO_IRQ_PROC0, true);
 
-	/* Initialize the virtual 9918 VDP. */
+	/*
+	 * Initialize the virtual 9918 VDP.  This must be done early
+	 * since it adjusts the system clock, and so anything that is
+	 * derived from the system clock must be initialized after.
+	 */
 	pico9918_init();
 
 	/* Initialize the VDP TTY. */
