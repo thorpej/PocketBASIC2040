@@ -50,8 +50,7 @@
 /*
  * We need the following GPIOs for hardware functions.  The PIO VGA interface
  * needs 2 contiguous GPIOs for sync signals and 12 contiguous GPIOs for the
- * 3 4-bit RGB signals.  XXX These are currently hard-coded as GP0-GP13 in the
- * VGA submodule, will will have to be changed.
+ * 3 4-bit RGB signals.
  *
  *   RP2040 GPIO        FUNCTION                Purpose              Pico pin
  * ============================================================================
@@ -83,6 +82,9 @@
  *	GP21		I2C0 SCL					27
  *
  *	GP22		SIO			SD Card Detect		29
+ *
+ *	GP26		PIO1 SMx		PS/2 data		31
+ *	GP27		PIO1 SMx		PS/2 clock		32
  */
 
 #define	PIN_UART0_TX	0
@@ -100,6 +102,9 @@
 #define	PIN_I2C0_SCL	21
 
 #define	PIN_SD_CDn	22
+
+#define	PIN_PS2_DATA	26
+#define	PIN_PS2_CLK	27
 
 static const struct gpio_pin_config {
 	unsigned int       first;
@@ -121,6 +126,8 @@ static const struct gpio_pin_config {
 	{ PIN_I2C0_SDA,		PIN_I2C0_SCL,		GPIO_FUNC_I2C },
 
 	{ PIN_SD_CDn,		PIN_SD_CDn,		GPIO_FUNC_SIO },
+
+	{ PIN_PS2_DATA,		PIN_PS2_CLK,		GPIO_FUNC_PIO1 },
 };
 static const size_t ngpio_pin_config =
     sizeof(gpio_pin_config) / sizeof(gpio_pin_config[0]);
