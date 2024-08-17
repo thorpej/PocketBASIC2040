@@ -1,0 +1,199 @@
+;
+; Copyright (c) 2022, 2024 Jason R. Thorpe.
+; All rights reserved.
+;
+; Redistribution and use in source and binary forms, with or without
+; modification, are permitted provided that the following conditions
+; are met:
+; 1. Redistributions of source code must retain the above copyright
+;    notice, this list of conditions and the following disclaimer.
+; 2. Redistributions in binary form must reproduce the above copyright
+;    notice, this list of conditions and the following disclaimer in the
+;    documentation and/or other materials provided with the distribution.
+;
+; THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+; IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+; OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+; IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+; INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+; BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED
+; AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+; OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+; OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+; SUCH DAMAGE.
+;
+
+.program ps2_io
+
+;
+; PIO state machine program to perform I/O to a PS/2 keyboard or mouse.
+; This is loosely based on a Pico AT keyboard driver by Brenden Adamczak
+; (https://github.com/brendena/atkPico/tree/main), but with some
+; differences:
+;
+;	- Parity on received bytes is transfered to the CPU and checked.
+;
+;	- When transmitting, we drive the outputs more like open-drains
+;	  by manipulating the pin direction.
+;
+; Pin indices:
+;
+; 0 - Data
+; 1 - Clock
+;
+.define DataPin		0
+.define ClkPin		1
+
+;
+; N.B. when these bits are "driven" high, we're actually setting the
+; pin as an input (the internal pull-up is enabled).  They are driven
+; low by configuring the pin as an output (the output valies are hard-
+; wired to 0 when we configure the PIO).
+;
+; Because we have to set the pindir to 1 to be an output (which drives
+; the output to 0), we need to logically invert the signals here.
+;
+;                     Clk | Data
+.define ClkLow		0b01
+.define ClkAndDataLow	0b00
+.define DataLow		0b10
+.define Idle		0b11
+
+main_loop:
+	; Check for a datum to send to the keyboard.
+	jmp !osre send_datum
+
+	; If clock is still high, we haven't yet received the start bit.
+	jmp pin main_loop
+
+	; Clock has gone low, indicating we've received the start bit.
+	; Set a counter to receive 9 bits (8 data + 1 parity) and wait
+	; for clock to go high again.
+	set x, 8
+	wait 1 pin ClkPin
+
+in_loop:
+	wait 0 pin ClkPin [1]	; wait for falling clock edge
+	in pins, 1		; shift in data bit
+	wait 1 pin ClkPin	; wait for the rising edge
+	jmp x-- in_loop
+
+	; Discard the stop bit.
+	wait 0 pin ClkPin
+	wait 1 pin ClkPin
+
+	; Signal that a datum is available.
+	irq set 0
+	jmp main_loop
+
+send_datum:
+	; We are expecting to get 9 bits to transmit: 8 data + 1 parity.
+	set x, 8
+
+	; We need to pull the clock low and hold it for at least 100us.
+	; Once that time has passed, we need to pull the data line low
+	; to generate the start bit and then after the data hold time,
+	; release the clock and let the device take over.
+	set pindirs ClkLow [15]		; XXX tune
+	set pindirs ClkAndDataLow [1]	; generate start bit
+	set pindirs DataLow		; release clock, device latches start
+
+out_loop:
+	wait 0 pin ClkPin [1]	; wait for falling clock edge
+	out pindirs, 1		; send next bit
+	wait 1 pin ClkPin	; wait for the rising edge
+	jmp x-- out_loop
+
+	wait 0 pin ClkPin [1]	; wait for falling clock edge
+	set pindirs Idle	; send the stop bit
+	wait 1 pin ClkPin	; wait for the rising edge
+
+	; Now just wait for one more clock cycle (the ACK bit) and let the
+	; line stabilize before wrapping around back to the main loop.
+	wait 0 pin ClkPin
+	wait 1 pin ClkPin [2]
+
+% c-sdk {
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+
+static inline void
+ps2_io_program_init(PIO pio, uint sm, uint offset, uint pin_base)
+{
+	const uint pin_data = pin_base;
+	const uint pin_clk = pin_base + 1;
+
+	pio_sm_config c = ps2_io_program_get_default_config(offset);
+
+	sm_config_set_set_pins(&c, pin_base, 2);
+	sm_config_set_jmp_pin(&c, pin_clk);
+
+	sm_config_set_out_pins(&c, pin_data, 1);
+	sm_config_set_out_shift(&c, true/*right-shift*/, true/*auto-pull*/,
+	    8/*data*/ + 1/*parity*/);
+
+	sm_config_set_in_pins(&c, pin_data, 1);
+	sm_config_set_in_shift(&c, true/*right-shift*/, true/*auto-push*/,
+	    8/*data*/ + 1/*parity*/);
+
+	/*
+	 * Upper end of clock frequency is 16.7KHz.  We want ~8 SM cycles
+	 * per PS/2 clock cycle, so that we're sampling not-too-close to
+	 * the clock edge.
+	 */
+	float div = (float)clock_get_hz(clk_sys) / (8 * 16700);
+	sm_config_set_clkdiv(&c, div);
+
+	/*
+	 * Sequence pin initialization to minimize signal glitches.
+	 * Setup is that pin is driven low when PIO asserts OE, and
+	 * is pulled-up otherwise.
+	 *
+	 * Initial state is "pins are inputs".
+	 */
+	uint32_t ps2_pins = (1U << pin_data) | (1U << pin_clk);
+
+	/* Set internal pullups. */
+	gpio_set_pulls(data_pin, true/*up*/, false/*down*/);
+	gpio_set_pulls(clk_pin, true/*up*/, false/*down*/);
+
+	/* Set pins to high temporarily while configuring. */
+	pio_sm_set_pins_with_mask(pio, sm, ps2_pins, ps2_pins);
+
+	/*
+	 * Set pins to output.  This will drive each pin high as soon
+	 * as we set the pin function to PIO.  However, we will immediately
+	 * follow that with an output-enable-invert, which will switch
+	 * the pin to input (at which point the pull-up will keep it high).
+	 */
+	pio_sm_set_pindirs_with_mask(pio, sm, ps2_pins, ps2_pins);
+
+	pio_gpio_init(pio, pin_data);
+	gpio_set_oeover(pin_data, GPIO_OVERRIDE_INVERT);
+
+	pio_gpio_init(pio, pin_clk);
+	gpio_set_oeover(pin_clk, GPIO_OVERRIDE_INVERT);
+
+	/*
+	 * Now that the pins are both set to input when OE=1, set the
+	 * output value of the pin to low so that when we set OE=0,
+	 * the pin will become an output and pull the line low.
+	 */
+	pio_sm_set_pins_with_mask(pio, sm, 0, ps2_pins);
+
+	/*
+	 * Clear the IRQ before starting, and make sure the flag doesn't
+	 * actually assert a system-level interrupt (we're just using it
+	 * as a flag, for now).
+	 */
+	pio_set_irq0_source_enabled(pio, pis_interrupt0 + sm, false);
+	pio_set_irq1_source_enabled(pio, pis_interrupt0 + sm, false);
+	pio_interrupt_clear(pio, sm);
+
+	/* Configure and start the state machine. */
+	pio_sm_init(pio, sm, &c);
+	pio_sm_set_enabled(pio, sm, true);
+}
+
+%}
